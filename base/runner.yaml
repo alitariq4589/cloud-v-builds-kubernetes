@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: github-runner
+  namespace: github-runners
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: github-runner
+  template:
+    metadata:
+      labels:
+        app: github-runner
+    spec:
+      containers:
+      - name: runner
+        image: docker.io/cloudv10x/github-actions-riscv
+        env:
+        - name: GITHUB_REPO
+          value: "REPO_PLACEHOLDER"
+        - name: RUNNER_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-runner-tokens
+              key: TOKEN_PLACEHOLDER
+        securityContext:
+          privileged: true
