@@ -33,11 +33,7 @@ spec:
         volumeMounts:
         - name: docker-sock
           mountPath: /var/run/docker.sock
-      volumes:
-      - name: docker-sock
-        hostPath:
-          path: /var/run/docker.sock
-      livenessProbe:
+        livenessProbe:
           exec:
             command:
             - /bin/bash
@@ -52,3 +48,7 @@ spec:
           initialDelaySeconds: 120
           periodSeconds: 180
           failureThreshold: 1
+      volumes:
+      - name: docker-sock
+        hostPath:
+          path: /var/run/docker.sock
