@@ -13,9 +13,10 @@ spec:
       labels:
         app: github-runner
     spec:
+      hostNetwork: true           # Required for --network=host
       containers:
       - name: runner
-        image: docker.io/cloudv10x/github-actions-riscv
+        image: docker.io/cloudv10x/github-actions-riscv:docker-latest
         env:
         - name: GITHUB_REPO
           value: "REPO_PLACEHOLDER"
@@ -24,5 +25,16 @@ spec:
             secretKeyRef:
               name: github-runner-tokens
               key: TOKEN_PLACEHOLDER
+        - name: RUNNER_NAME
+          value: "pioneer-1-kubernetes"
+        - name: DOCKER_ENABLED   # Added this to match your docker run
+          value: "true"
         securityContext:
-          privileged: true
+          privileged: true       # Required for --privileged
+        volumeMounts:            # This connects the container to the host's Docker
+        - name: docker-sock
+          mountPath: /var/run/docker.sock
+      volumes:
+      - name: docker-sock
+        hostPath:
+          path: /var/run/docker.sock
