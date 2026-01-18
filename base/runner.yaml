@@ -14,12 +14,10 @@ data:
   check-runner.sh: |
     #!/bin/bash
     # Health check script for GitHub Actions runner
-    # Based on your Ansible monitoring logic
     
     LOG_FILE="/tmp/runner-health.log"
     
     # Get recent logs from the runner process
-    # We check the runner container's own logs, not docker logs
     RECENT_LOGS=$(tail -n 200 /proc/1/fd/1 2>/dev/null || echo "")
     
     # Count "Connected to GitHub" occurrences in recent logs
@@ -41,7 +39,6 @@ data:
     echo "  Has Error: $HAS_ERROR" >> "$LOG_FILE"
     
     # Exit code 1 triggers a restart by Kubernetes
-    # Logic: Restart if we have the error AND multiple reconnects AND no job activity
     if [ "$HAS_ERROR" = "yes" ] && [ "$CONNECT_COUNT" -gt 2 ] && [ "$HAS_JOB_ACTIVITY" = "no" ]; then
         echo "  Decision: RESTART (stuck condition detected)" >> "$LOG_FILE"
         exit 1
@@ -72,11 +69,15 @@ spec:
         app: github-runner
     spec:
       serviceAccountName: github-runner
-      # hostUsers: false  # Uncomment after enabling user namespaces
+      
+      # Resource-intensive builds need host network for better performance
+      hostNetwork: false
       
       containers:
       - name: runner
-        image: docker.io/cloudv10x/github-actions-riscv:docker-latest
+        image: cloudv10x/github-actions-riscv:docker-latest
+        imagePullPolicy: Always
+        
         env:
         - name: GITHUB_REPO
           value: "REPO_PLACEHOLDER"
@@ -88,111 +89,62 @@ spec:
         - name: RUNNER_NAME
           value: "pioneer-1-kubernetes"
         - name: DOCKER_HOST
-          value: "tcp://localhost:2376"
-        - name: DOCKER_TLS_VERIFY
-          value: "1"
-        - name: DOCKER_CERT_PATH
-          value: "/certs/client"
+          value: "unix:///var/run/docker.sock"
+        - name: DOCKER_ENABLED
+          value: "true"
         
         resources:
           requests:
-            memory: "16Gi"     # 16GB guaranteed
-            cpu: "16000m"      # 16 cores guaranteed
+            memory: "16Gi"
+            cpu: "16000m"
           limits:
-            memory: "48Gi"     # Can burst to 48GB
-            cpu: "32000m"      # Can burst to 32 cores
+            memory: "48Gi"
+            cpu: "32000m"
+        
+        securityContext:
+          privileged: true
+          runAsUser: 0
+          allowPrivilegeEscalation: true
         
         volumeMounts:
-        - name: docker-certs
-          mountPath: /certs/client
-          readOnly: true
+        - name: docker-sock
+          mountPath: /var/run/docker.sock
         - name: runner-work
           mountPath: /home/runner/_work
         - name: health-check-script
           mountPath: /usr/local/bin/check-runner.sh
           subPath: check-runner.sh
         
-        # Liveness probe - uses your Ansible logic
+        # Liveness probe with your Ansible logic
         livenessProbe:
           exec:
             command:
             - /bin/bash
             - /usr/local/bin/check-runner.sh
-          initialDelaySeconds: 120    # Give 2 minutes for initial startup
-          periodSeconds: 180          # Check every 3 minutes (same as your Ansible cron)
+          initialDelaySeconds: 120
+          periodSeconds: 180
           timeoutSeconds: 10
-          failureThreshold: 1         # Restart immediately on first failure
+          failureThreshold: 1
         
-        # Readiness probe - simpler check for startup
+        # Readiness probe - check if runner is connected
         readinessProbe:
           exec:
             command:
             - /bin/sh
             - -c
             - |
-              # Just check if runner process exists and Docker is accessible
               pgrep -f "Runner.Listener" > /dev/null && \
-              docker --tlsverify \
-                --tlscacert=/certs/client/ca.pem \
-                --tlscert=/certs/client/cert.pem \
-                --tlskey=/certs/client/key.pem \
-                -H=tcp://localhost:2376 info > /dev/null 2>&1
+              docker info > /dev/null 2>&1
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
-      
-      - name: dind
-        image: docker:27-dind
-        env:
-        - name: DOCKER_TLS_CERTDIR
-          value: "/certs"
-        - name: DOCKER_DRIVER
-          value: "overlay2"
-        
-        securityContext:
-          privileged: true
-        
-        resources:
-          requests:
-            memory: "4Gi"      # 4GB guaranteed for Docker
-            cpu: "2000m"       # 2 cores guaranteed
-          limits:
-            memory: "16Gi"     # Can burst to 16GB
-            cpu: "4000m"       # Can burst to 4 cores
-        
-        volumeMounts:
-        - name: docker-storage
-          mountPath: /var/lib/docker
-        - name: docker-certs
-          mountPath: /certs
-        - name: runner-work
-          mountPath: /home/runner/_work
-        
-        livenessProbe:
-          exec:
-            command:
-            - docker
-            - info
-          initialDelaySeconds: 45
-          periodSeconds: 30
-          timeoutSeconds: 10
           failureThreshold: 3
-        
-        readinessProbe:
-          exec:
-            command:
-            - docker
-            - info
-          initialDelaySeconds: 20
-          periodSeconds: 10
-          timeoutSeconds: 5
       
       volumes:
-      - name: docker-storage
-        emptyDir:
-          sizeLimit: 50Gi
-      - name: docker-certs
-        emptyDir: {}
+      - name: docker-sock
+        hostPath:
+          path: /var/run/docker.sock
+          type: Socket
       - name: runner-work
         emptyDir:
           sizeLimit: 20Gi
@@ -201,6 +153,7 @@ spec:
           name: runner-health-check
           defaultMode: 0755
       
+      # Spread runners across nodes if you add more later
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
