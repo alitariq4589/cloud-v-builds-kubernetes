@@ -1,0 +1,21 @@
+namespace: github-runners
+
+resources:
+- ../../base/runner.yaml
+
+nameSuffix: -kubernetes
+
+patches:
+- target:
+    kind: Deployment
+    name: github-runner
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/env/0/value
+      value: "https://github.com/alitariq4589/kubernetes-riscv"
+    - op: replace
+      path: /spec/template/spec/containers/0/env/1/valueFrom/secretKeyRef/key
+      value: "kubernetes-riscv-token"
+    - op: replace
+      path: /spec/template/spec/containers/0/env/2/value
+      value: "pioneer-1-kubernetes-kubernetes"
