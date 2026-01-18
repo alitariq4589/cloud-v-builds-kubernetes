@@ -96,13 +96,11 @@ spec:
         
         resources:
           requests:
-            memory: "2Gi"
-            cpu: "1000m"
-            ephemeral-storage: "30Gi"
+            memory: "16Gi"     # 16GB guaranteed
+            cpu: "16000m"      # 16 cores guaranteed
           limits:
-            memory: "8Gi"
-            cpu: "4000m"
-            ephemeral-storage: "30Gi"
+            memory: "48Gi"     # Can burst to 48GB
+            cpu: "32000m"      # Can burst to 32 cores
         
         volumeMounts:
         - name: docker-certs
@@ -156,13 +154,11 @@ spec:
         
         resources:
           requests:
-            memory: "1Gi"
-            cpu: "500m"
-            ephemeral-storage: "60Gi"
+            memory: "4Gi"      # 4GB guaranteed for Docker
+            cpu: "2000m"       # 2 cores guaranteed
           limits:
-            memory: "4Gi"
-            cpu: "2000m"
-            ephemeral-storage: "60Gi"
+            memory: "16Gi"     # Can burst to 16GB
+            cpu: "4000m"       # Can burst to 4 cores
         
         volumeMounts:
         - name: docker-storage
