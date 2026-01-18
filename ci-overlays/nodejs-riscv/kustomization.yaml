@@ -1,8 +1,7 @@
-# ci-overlays/nodejs-riscv/kustomization.yaml
 namespace: github-runners
 
 resources:
-- ../../base
+- ../../base/runner.yaml
 
 nameSuffix: -nodejs
 
