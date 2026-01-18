@@ -98,9 +98,11 @@ spec:
           requests:
             memory: "2Gi"
             cpu: "1000m"
+            ephemeral-storage: "30Gi"
           limits:
             memory: "8Gi"
             cpu: "4000m"
+            ephemeral-storage: "30Gi"
         
         volumeMounts:
         - name: docker-certs
@@ -156,9 +158,11 @@ spec:
           requests:
             memory: "1Gi"
             cpu: "500m"
+            ephemeral-storage: "60Gi"
           limits:
             memory: "4Gi"
             cpu: "2000m"
+            ephemeral-storage: "60Gi"
         
         volumeMounts:
         - name: docker-storage
