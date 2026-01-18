@@ -2,6 +2,7 @@ resources:
   - namespace.yaml
   - network-policy.yaml
   - resource-quota.yaml
+  - runner.yaml
 
 commonLabels:
   managed-by: kustomize
