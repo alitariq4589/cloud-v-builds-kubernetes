@@ -31,6 +31,28 @@ spec:
           value: "true"
         securityContext:
           privileged: true       # Required for --privileged
+        livenessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - |
+              # Get the last 100 lines
+              LOGS=$(tail -n 100 /proc/1/fd/1 2>/dev/null)
+              
+              # Check for the specific error
+              HAS_ERROR=$(echo "$LOGS" | grep -q "Object reference not set" && echo "yes" || echo "no")
+              
+              # Check if it has successfully connected in these 100 lines
+              IS_CONNECTED=$(echo "$LOGS" | grep -q "Connected to GitHub" && echo "yes" || echo "no")
+              
+              # Logic: Restart ONLY if error exists AND we don't see a successful "Connected" message
+              if [ "$HAS_ERROR" = "yes" ] && [ "$IS_CONNECTED" = "no" ]; then
+                exit 1
+              fi
+          initialDelaySeconds: 60 # Give it a full minute to try connecting first
+          periodSeconds: 60
+          failureThreshold: 1     # Restart immediately on first failure
         volumeMounts:            # This connects the container to the host's Docker
         - name: docker-sock
           mountPath: /var/run/docker.sock
