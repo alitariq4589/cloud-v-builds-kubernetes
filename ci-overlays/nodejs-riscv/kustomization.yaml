@@ -9,7 +9,7 @@ patches:
     apiVersion: apps/v1
     kind: Deployment
     metadata:
-      name: kubernetes-riscv-runner
+      name: nodejs-riscv-runner
     spec:
       template:
         spec:
@@ -17,9 +17,9 @@ patches:
           - name: runner
             env:
             - name: GITHUB_REPO
-              value: "https://github.com/alitariq4589/kubernetes-riscv"
+              value: "https://github.com/alitariq4589/nodejs-riscv"
             - name: RUNNER_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: github-runner-tokens
-                  key: kubernetes-riscv-token
+                  key: nodejs-riscv-token
