@@ -33,10 +33,6 @@ spec:
         volumeMounts:
         - name: docker-sock
           mountPath: /var/run/docker.sock
-        - name: runner-data
-          mountPath: /home/runner/_work
-        - name: runner-state
-          mountPath: /home/runner/.runner
         livenessProbe:
           exec:
             command:
@@ -56,11 +52,3 @@ spec:
       - name: docker-sock
         hostPath:
           path: /var/run/docker.sock
-      - name: runner-data
-        hostPath:
-          path: /var/lib/github-runners/work
-          type: DirectoryOrCreate
-      - name: runner-state
-        hostPath:
-          path: /var/lib/github-runners/state
-          type: DirectoryOrCreate
