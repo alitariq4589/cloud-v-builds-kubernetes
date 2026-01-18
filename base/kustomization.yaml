@@ -6,6 +6,6 @@ resources:
   - network-policy.yaml
   - docker-socket-hardening.yaml
 
-labels:
+commonLabels:
   managed-by: kustomize
   component: ci-runner
