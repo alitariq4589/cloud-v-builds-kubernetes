@@ -1,58 +1,3 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: github-runner
-  namespace: github-runners
-automountServiceAccountToken: false
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: runner-health-check
-  namespace: github-runners
-data:
-  check-runner.sh: |
-    #!/bin/bash
-    # Health check script for GitHub Actions runner
-    
-    LOG_FILE="/tmp/runner-health.log"
-    
-    # Get recent logs from the runner process
-    RECENT_LOGS=$(tail -n 200 /proc/1/fd/1 2>/dev/null || echo "")
-    
-    # Count "Connected to GitHub" occurrences in recent logs
-    CONNECT_COUNT=$(echo "$RECENT_LOGS" | grep -c "Connected to GitHub" || echo "0")
-    
-    # Check for job activity
-    HAS_JOB_ACTIVITY=$(echo "$RECENT_LOGS" | grep -qE "(Running job|Listening for Jobs|Job .* completed)" && echo "yes" || echo "no")
-    
-    # Check for the specific error
-    HAS_ERROR=$(echo "$RECENT_LOGS" | grep -q "Runner connect error: Object reference not set to an instance of an object" && echo "yes" || echo "no")
-    
-    # Check if runner process is actually running
-    RUNNER_RUNNING=$(pgrep -f "Runner.Listener" > /dev/null && echo "yes" || echo "no")
-    
-    echo "$(date) - Health Check:" >> "$LOG_FILE"
-    echo "  Runner Process: $RUNNER_RUNNING" >> "$LOG_FILE"
-    echo "  Connect Count: $CONNECT_COUNT" >> "$LOG_FILE"
-    echo "  Job Activity: $HAS_JOB_ACTIVITY" >> "$LOG_FILE"
-    echo "  Has Error: $HAS_ERROR" >> "$LOG_FILE"
-    
-    # Exit code 1 triggers a restart by Kubernetes
-    if [ "$HAS_ERROR" = "yes" ] && [ "$CONNECT_COUNT" -gt 2 ] && [ "$HAS_JOB_ACTIVITY" = "no" ]; then
-        echo "  Decision: RESTART (stuck condition detected)" >> "$LOG_FILE"
-        exit 1
-    fi
-    
-    # Also restart if runner process is dead
-    if [ "$RUNNER_RUNNING" = "no" ]; then
-        echo "  Decision: RESTART (runner process not found)" >> "$LOG_FILE"
-        exit 1
-    fi
-    
-    echo "  Decision: HEALTHY" >> "$LOG_FILE"
-    exit 0
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -68,16 +13,9 @@ spec:
       labels:
         app: github-runner
     spec:
-      serviceAccountName: github-runner
-      
-      # Resource-intensive builds need host network for better performance
-      hostNetwork: false
-      
       containers:
       - name: runner
         image: cloudv10x/github-actions-riscv:docker-latest
-        imagePullPolicy: Always
-        
         env:
         - name: GITHUB_REPO
           value: "REPO_PLACEHOLDER"
@@ -88,78 +26,14 @@ spec:
               key: TOKEN_PLACEHOLDER
         - name: RUNNER_NAME
           value: "pioneer-1-kubernetes"
-        - name: DOCKER_HOST
-          value: "unix:///var/run/docker.sock"
         - name: DOCKER_ENABLED
           value: "true"
-        
-        resources:
-          requests:
-            memory: "16Gi"
-            cpu: "16000m"
-          limits:
-            memory: "48Gi"
-            cpu: "32000m"
-        
         securityContext:
           privileged: true
-          runAsUser: 0
-          allowPrivilegeEscalation: true
-        
         volumeMounts:
         - name: docker-sock
           mountPath: /var/run/docker.sock
-        - name: runner-work
-          mountPath: /home/runner/_work
-        - name: health-check-script
-          mountPath: /usr/local/bin/check-runner.sh
-          subPath: check-runner.sh
-        
-        # Liveness probe with your Ansible logic
-        livenessProbe:
-          exec:
-            command:
-            - /bin/bash
-            - /usr/local/bin/check-runner.sh
-          initialDelaySeconds: 120
-          periodSeconds: 180
-          timeoutSeconds: 10
-          failureThreshold: 1
-        
-        # Readiness probe - check if runner is connected
-        readinessProbe:
-          exec:
-            command:
-            - /bin/sh
-            - -c
-            - |
-              pgrep -f "Runner.Listener" > /dev/null && \
-              docker info > /dev/null 2>&1
-          initialDelaySeconds: 30
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
-      
       volumes:
       - name: docker-sock
         hostPath:
           path: /var/run/docker.sock
-          type: Socket
-      - name: runner-work
-        emptyDir:
-          sizeLimit: 20Gi
-      - name: health-check-script
-        configMap:
-          name: runner-health-check
-          defaultMode: 0755
-      
-      # Spread runners across nodes if you add more later
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchLabels:
-                  app: github-runner
-              topologyKey: kubernetes.io/hostname
