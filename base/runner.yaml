@@ -1,3 +1,61 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: github-runner
+  namespace: github-runners
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: runner-health-check
+  namespace: github-runners
+data:
+  check-runner.sh: |
+    #!/bin/bash
+    # Health check script for GitHub Actions runner
+    # Based on your Ansible monitoring logic
+    
+    LOG_FILE="/tmp/runner-health.log"
+    
+    # Get recent logs from the runner process
+    # We check the runner container's own logs, not docker logs
+    RECENT_LOGS=$(tail -n 200 /proc/1/fd/1 2>/dev/null || echo "")
+    
+    # Count "Connected to GitHub" occurrences in recent logs
+    CONNECT_COUNT=$(echo "$RECENT_LOGS" | grep -c "Connected to GitHub" || echo "0")
+    
+    # Check for job activity
+    HAS_JOB_ACTIVITY=$(echo "$RECENT_LOGS" | grep -qE "(Running job|Listening for Jobs|Job .* completed)" && echo "yes" || echo "no")
+    
+    # Check for the specific error
+    HAS_ERROR=$(echo "$RECENT_LOGS" | grep -q "Runner connect error: Object reference not set to an instance of an object" && echo "yes" || echo "no")
+    
+    # Check if runner process is actually running
+    RUNNER_RUNNING=$(pgrep -f "Runner.Listener" > /dev/null && echo "yes" || echo "no")
+    
+    echo "$(date) - Health Check:" >> "$LOG_FILE"
+    echo "  Runner Process: $RUNNER_RUNNING" >> "$LOG_FILE"
+    echo "  Connect Count: $CONNECT_COUNT" >> "$LOG_FILE"
+    echo "  Job Activity: $HAS_JOB_ACTIVITY" >> "$LOG_FILE"
+    echo "  Has Error: $HAS_ERROR" >> "$LOG_FILE"
+    
+    # Exit code 1 triggers a restart by Kubernetes
+    # Logic: Restart if we have the error AND multiple reconnects AND no job activity
+    if [ "$HAS_ERROR" = "yes" ] && [ "$CONNECT_COUNT" -gt 2 ] && [ "$HAS_JOB_ACTIVITY" = "no" ]; then
+        echo "  Decision: RESTART (stuck condition detected)" >> "$LOG_FILE"
+        exit 1
+    fi
+    
+    # Also restart if runner process is dead
+    if [ "$RUNNER_RUNNING" = "no" ]; then
+        echo "  Decision: RESTART (runner process not found)" >> "$LOG_FILE"
+        exit 1
+    fi
+    
+    echo "  Decision: HEALTHY" >> "$LOG_FILE"
+    exit 0
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -13,7 +71,9 @@ spec:
       labels:
         app: github-runner
     spec:
-      hostNetwork: true           # Required for --network=host
+      serviceAccountName: github-runner
+      # hostUsers: false  # Uncomment after enabling user namespaces
+      
       containers:
       - name: runner
         image: docker.io/cloudv10x/github-actions-riscv:docker-latest
@@ -27,36 +87,126 @@ spec:
               key: TOKEN_PLACEHOLDER
         - name: RUNNER_NAME
           value: "pioneer-1-kubernetes"
-        - name: DOCKER_ENABLED   # Added this to match your docker run
-          value: "true"
-        securityContext:
-          privileged: true       # Required for --privileged
+        - name: DOCKER_HOST
+          value: "tcp://localhost:2376"
+        - name: DOCKER_TLS_VERIFY
+          value: "1"
+        - name: DOCKER_CERT_PATH
+          value: "/certs/client"
+        
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+        
+        volumeMounts:
+        - name: docker-certs
+          mountPath: /certs/client
+          readOnly: true
+        - name: runner-work
+          mountPath: /home/runner/_work
+        - name: health-check-script
+          mountPath: /usr/local/bin/check-runner.sh
+          subPath: check-runner.sh
+        
+        # Liveness probe - uses your Ansible logic
         livenessProbe:
           exec:
             command:
             - /bin/bash
+            - /usr/local/bin/check-runner.sh
+          initialDelaySeconds: 120    # Give 2 minutes for initial startup
+          periodSeconds: 180          # Check every 3 minutes (same as your Ansible cron)
+          timeoutSeconds: 10
+          failureThreshold: 1         # Restart immediately on first failure
+        
+        # Readiness probe - simpler check for startup
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
             - -c
             - |
-              # Get the last 100 lines
-              LOGS=$(tail -n 100 /proc/1/fd/1 2>/dev/null)
-              
-              # Check for the specific error
-              HAS_ERROR=$(echo "$LOGS" | grep -q "Object reference not set" && echo "yes" || echo "no")
-              
-              # Check if it has successfully connected in these 100 lines
-              IS_CONNECTED=$(echo "$LOGS" | grep -q "Connected to GitHub" && echo "yes" || echo "no")
-              
-              # Logic: Restart ONLY if error exists AND we don't see a successful "Connected" message
-              if [ "$HAS_ERROR" = "yes" ] && [ "$IS_CONNECTED" = "no" ]; then
-                exit 1
-              fi
-          initialDelaySeconds: 60 # Give it a full minute to try connecting first
-          periodSeconds: 60
-          failureThreshold: 1     # Restart immediately on first failure
-        volumeMounts:            # This connects the container to the host's Docker
-        - name: docker-sock
-          mountPath: /var/run/docker.sock
+              # Just check if runner process exists and Docker is accessible
+              pgrep -f "Runner.Listener" > /dev/null && \
+              docker --tlsverify \
+                --tlscacert=/certs/client/ca.pem \
+                --tlscert=/certs/client/cert.pem \
+                --tlskey=/certs/client/key.pem \
+                -H=tcp://localhost:2376 info > /dev/null 2>&1
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+      
+      - name: dind
+        image: docker:27-dind
+        env:
+        - name: DOCKER_TLS_CERTDIR
+          value: "/certs"
+        - name: DOCKER_DRIVER
+          value: "overlay2"
+        
+        securityContext:
+          privileged: true
+        
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        
+        volumeMounts:
+        - name: docker-storage
+          mountPath: /var/lib/docker
+        - name: docker-certs
+          mountPath: /certs
+        - name: runner-work
+          mountPath: /home/runner/_work
+        
+        livenessProbe:
+          exec:
+            command:
+            - docker
+            - info
+          initialDelaySeconds: 45
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          exec:
+            command:
+            - docker
+            - info
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+      
       volumes:
-      - name: docker-sock
-        hostPath:
-          path: /var/run/docker.sock
+      - name: docker-storage
+        emptyDir:
+          sizeLimit: 50Gi
+      - name: docker-certs
+        emptyDir: {}
+      - name: runner-work
+        emptyDir:
+          sizeLimit: 20Gi
+      - name: health-check-script
+        configMap:
+          name: runner-health-check
+          defaultMode: 0755
+      
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app: github-runner
+              topologyKey: kubernetes.io/hostname

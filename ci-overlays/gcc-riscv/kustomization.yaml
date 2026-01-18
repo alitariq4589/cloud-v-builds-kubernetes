@@ -1,25 +1,22 @@
+# ci-overlays/gcc-riscv/kustomization.yaml
+namespace: github-runners
+
 resources:
 - ../../base
+
+nameSuffix: -gcc
 
 patches:
 - target:
     kind: Deployment
     name: github-runner
-  patch: |
-    apiVersion: apps/v1
-    kind: Deployment
-    metadata:
-      name: gcc-riscv-runner
-    spec:
-      template:
-        spec:
-          containers:
-          - name: runner
-            env:
-            - name: GITHUB_REPO
-              value: "https://github.com/alitariq4589/gcc-riscv"
-            - name: RUNNER_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: github-runner-tokens
-                  key: gcc-riscv-token
+  patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/env/0/value
+      value: "https://github.com/alitariq4589/gcc-riscv"
+    - op: replace
+      path: /spec/template/spec/containers/0/env/1/valueFrom/secretKeyRef/key
+      value: "gcc-riscv-token"
+    - op: replace
+      path: /spec/template/spec/containers/0/env/2/value
+      value: "pioneer-1-kubernetes-gcc"

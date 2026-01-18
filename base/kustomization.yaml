@@ -1,2 +1,10 @@
+# base/kustomization.yaml
 resources:
+  - namespace.yaml
   - runner.yaml
+  - resource-quota.yaml
+  - network-policy.yaml
+
+commonLabels:
+  managed-by: kustomize
+  component: ci-runner
