@@ -4,7 +4,8 @@ resources:
   - runner.yaml
   - resource-quota.yaml
   - network-policy.yaml
+  - docker-socket-hardening.yaml
 
-commonLabels:
+labels:
   managed-by: kustomize
   component: ci-runner
