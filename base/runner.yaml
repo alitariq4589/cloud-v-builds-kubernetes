@@ -37,3 +37,18 @@ spec:
       - name: docker-sock
         hostPath:
           path: /var/run/docker.sock
+      livenessProbe:
+          exec:
+            command:
+            - /bin/bash
+            - -c
+            - |
+              RECENT_LOGS=$(tail -n 100 /proc/1/fd/1 2>/dev/null)
+              HAS_ERROR=$(echo "$RECENT_LOGS" | grep -q "Object reference not set" && echo "yes" || echo "no")
+              IS_CONNECTED=$(echo "$RECENT_LOGS" | grep -q "Connected to GitHub" && echo "yes" || echo "no")
+              if [ "$HAS_ERROR" = "yes" ] && [ "$IS_CONNECTED" = "no" ]; then
+                exit 1
+              fi
+          initialDelaySeconds: 120
+          periodSeconds: 180
+          failureThreshold: 1
