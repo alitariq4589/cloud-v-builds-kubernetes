@@ -3,7 +3,7 @@ kind: Kustomization
 
 namespace: github-runners
 
-bases:
+resources:
 - ../../base
 
 nameSuffix: -strace
@@ -22,3 +22,23 @@ patches:
     - op: replace
       path: /spec/template/spec/containers/0/env/2/value
       value: "pioneer-1-kubernetes-strace"
+- target:
+    kind: ResourceQuota
+    name: runner-quota
+  patch: |-
+    $patch: delete
+- target:
+    kind: LimitRange
+    name: runner-limits
+  patch: |-
+    $patch: delete
+- target:
+    kind: NetworkPolicy
+    name: runner-isolation
+  patch: |-
+    $patch: delete
+- target:
+    kind: Namespace
+    name: github-runners
+  patch: |-
+    $patch: delete
