@@ -4,41 +4,21 @@ kind: Kustomization
 namespace: github-runners
 
 resources:
-- ../../base
+  - ../../base
 
 nameSuffix: -binutils
 
 patches:
-- target:
-    kind: Deployment
-    name: github-runner
-  patch: |-
-    - op: replace
-      path: /spec/template/spec/containers/0/env/0/value
-      value: "https://github.com/alitariq4589/binutils-riscv"
-    - op: replace
-      path: /spec/template/spec/containers/0/env/1/valueFrom/secretKeyRef/key
-      value: "binutils-riscv-token"
-    - op: replace
-      path: /spec/template/spec/containers/0/env/2/value
-      value: "pioneer-1-kubernetes-binutils"
-- target:
-    kind: ResourceQuota
-    name: runner-quota
-  patch: |-
-    $patch: delete
-- target:
-    kind: LimitRange
-    name: runner-limits
-  patch: |-
-    $patch: delete
-- target:
-    kind: NetworkPolicy
-    name: runner-isolation
-  patch: |-
-    $patch: delete
-- target:
-    kind: Namespace
-    name: github-runners
-  patch: |-
-    $patch: delete
+  - patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "https://github.com/alitariq4589/binutils-riscv"
+      - op: replace
+        path: /spec/template/spec/containers/0/env/1/valueFrom/secretKeyRef/key
+        value: "binutils-riscv-token"
+      - op: replace
+        path: /spec/template/spec/containers/0/env/2/value
+        value: "pioneer-1-kubernetes-binutils"
+    target:
+      kind: Deployment
+      name: github-runner
