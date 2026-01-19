@@ -28,18 +28,32 @@ spec:
           value: "pioneer-1-kubernetes"
         - name: DOCKER_ENABLED
           value: "true"
+        - name: DOTNET_GCHeapCount
+          value: "2"  # Limit .NET GC threads
+        - name: DOTNET_GCConserveMemory
+          value: "9"  # Max memory conservation (1-9)
         resources:
           requests:
-            cpu: "18"
-            memory: "20Gi"
+            cpu: "2"       # Reduced from 18
+            memory: "4Gi"  # Reduced from 20Gi
           limits:
-            cpu: "36"
-            memory: "64Gi"
+            cpu: "8"       # Reduced from 36
+            memory: "8Gi"  # Reduced from 64Gi
         securityContext:
           privileged: true
         volumeMounts:
         - name: docker-sock
           mountPath: /var/run/docker.sock
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/bash
+              - -c
+              - |
+                echo "Attempting to unregister runner..."
+                cd /runner && ./config.sh remove --token "${RUNNER_TOKEN}" || true
+                sleep 5
         livenessProbe:
           exec:
             command:
@@ -59,3 +73,4 @@ spec:
       - name: docker-sock
         hostPath:
           path: /var/run/docker.sock
+      terminationGracePeriodSeconds: 30
